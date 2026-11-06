@@ -51,9 +51,21 @@ const db = (jwt, path, method, data, prefer) => call(SUPABASE_URL + '/rest/v1/' 
 // Pastikan pemanggil adalah creator yang login (bukan orang lain)
 async function cekCreator(jwt) {
   if (!jwt) throw new Gagal('Belum login.');
+  // Cara utama: tanya database lewat fungsi is_creator (tidak bergantung pada sesi login Supabase)
+  const r = await call(SUPABASE_URL + '/rest/v1/rpc/is_creator', {
+    method: 'POST',
+    headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + jwt, 'Content-Type': 'application/json' },
+    body: '{}'
+  });
+  if (r.ok) {
+    if (r.body !== true) throw new Gagal('Akun ini bukan creator.');
+    return;
+  }
+  if (r.status !== 404) throw new Gagal('Login tidak valid. Muat ulang halaman lalu masuk lagi.');
+  // Cadangan kalau fungsi is_creator belum dibuat di Supabase
   const u = await call(SUPABASE_URL + '/auth/v1/user', { headers: { apikey: SUPABASE_KEY, Authorization: 'Bearer ' + jwt } });
   const email = u.ok && u.body && String(u.body.email || '').toLowerCase();
-  if (!email) throw new Gagal('Login tidak valid. Masuk ulang.');
+  if (!email) throw new Gagal('Login tidak valid. Muat ulang halaman lalu masuk lagi.');
   const c = await db(jwt, 'creators?select=email&email=eq.' + encodeURIComponent(email));
   if (!c.ok || !Array.isArray(c.body) || !c.body.length) throw new Gagal('Akun ini bukan creator.');
 }

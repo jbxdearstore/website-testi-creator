@@ -93,6 +93,7 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
       <button id="bAdd" class="btn ghost sm">+ Tambah owner manual</button>
       <button id="bInduk" class="btn ghost sm">Salinan induk</button>
       <button id="bZip" class="btn ghost sm">Aktifkan ulang dari zip</button>
+      <button id="bUpd" class="btn ghost sm">Perbarui semua buyer</button>
       <input id="zipPick" type="file" accept=".zip,application/zip" hidden>
       <button id="bExpOwner" class="btn ghost sm">Export owner (CSV)</button>
       <button id="bExpTesti" class="btn ghost sm">Export testimoni (CSV)</button>
@@ -175,6 +176,19 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
     <div class="btns">
       <button type="button" id="actCancel" class="btn ghost">Batal</button>
       <button type="button" id="actGo" class="btn">Aktifkan</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalUpd" class="cmodal" hidden>
+  <div class="cbox">
+    <h2>Perbarui semua buyer</h2>
+    <p class="muted small" id="updLead"></p>
+    <div id="updList" style="margin:12px 0"></div>
+    <div class="muted small" id="updProg" style="margin-top:10px" hidden></div>
+    <div class="btns">
+      <button type="button" id="updCancel" class="btn ghost">Batal</button>
+      <button type="button" id="updGo" class="btn">Perbarui</button>
     </div>
   </div>
 </div>

@@ -625,6 +625,61 @@
     finally { actBusy = false; $('actGo').disabled = false; $('actCancel').disabled = false; }
   }
 
+  /* ===== PERBARUI SEMUA BUYER ===== */
+  let updBusy = false, updPlan = [];
+  async function openUpd() {
+    try { await loadInduk(); } catch (e) { return toast(e.message); }
+    if (!induk) return toast('Salinan induk belum ada. Simpan dulu lewat tombol Salinan induk.');
+    updPlan = owners.map((o) => {
+      const st = stOf(o);
+      let aksi = 'perbarui', ket = 'akan diperbarui';
+      if (st === 'dihapus') { aksi = 'lewat'; ket = 'dilewati: sudah dihapus'; }
+      else if (!o.github_repo || !o.vercel_project) { aksi = 'lewat'; ket = 'dilewati: catatan website belum diisi'; }
+      else if (o.induk_versi === induk.versi) { aksi = 'lewat'; ket = 'sudah memakai versi terbaru'; }
+      return { o, aksi, ket };
+    }).filter((x) => stOf(x.o) !== 'dihapus');
+    const n = updPlan.filter((x) => x.aksi === 'perbarui').length;
+    $('updLead').textContent = 'Salinan induk versi ' + induk.versi + ' dipasang ke ' + n + ' website buyer. Pengaturan, data, dan config.js buyer tidak disentuh. Versi lama tetap ada di riwayat GitHub tiap buyer.';
+    drawUpd();
+    $('updProg').hidden = true;
+    $('updGo').hidden = n === 0; $('updGo').textContent = 'Perbarui ' + n + ' website';
+    $('updCancel').textContent = 'Batal';
+    $('modalUpd').hidden = false;
+  }
+  function drawUpd() {
+    const box = $('updList'); box.replaceChildren();
+    if (!updPlan.length) { box.appendChild(h('div', 'muted small', 'Belum ada buyer.')); return; }
+    updPlan.forEach((x) => {
+      const d = h('div', 'srow');
+      d.appendChild(h('span', null, x.o.nama_toko));
+      d.appendChild(h('span', 'muted', x.ket));
+      box.appendChild(d);
+    });
+  }
+  async function updGo() {
+    if (updBusy) return;
+    const todo = updPlan.filter((x) => x.aksi === 'perbarui');
+    if (!confirm('Perbarui ' + todo.length + ' website buyer ke salinan induk versi ' + induk.versi + '?')) return;
+    updBusy = true; $('updGo').disabled = true; $('updCancel').disabled = true;
+    const prog = $('updProg'); prog.hidden = false;
+    let ok = 0, lewat = 0, gagal = 0; const peringatan = [];
+    for (let i = 0; i < todo.length; i++) {
+      const x = todo[i];
+      prog.textContent = 'Memperbarui ' + (i + 1) + ' dari ' + todo.length + ': ' + x.o.nama_toko + '\u2026';
+      try {
+        const j = await api({ action: 'perbarui', owner_id: x.o.id });
+        x.aksi = 'selesai';
+        if (j.skip) { x.ket = j.skip; lewat++; } else { x.ket = 'berhasil diperbarui'; ok++; }
+        (j.warn || []).forEach((w) => peringatan.push(x.o.nama_toko + ': ' + w));
+      } catch (er) { x.aksi = 'gagal'; x.ket = 'gagal: ' + er.message; gagal++; }
+      drawUpd();
+    }
+    try { await load(); } catch (e) { /* abaikan */ }
+    prog.textContent = 'Selesai. Berhasil ' + ok + ', tanpa perubahan ' + lewat + ', gagal ' + gagal + '. Vercel membangun ulang website yang diperbarui, biasanya satu sampai dua menit.';
+    updBusy = false; $('updGo').hidden = true; $('updCancel').disabled = false; $('updCancel').textContent = 'Tutup';
+    if (peringatan.length) setTimeout(() => alert(peringatan.join('\n\n')), 400);
+  }
+
   /* ===== LOGIN ===== */
   async function boot(session) {
     const uid = session.user.id;
@@ -685,6 +740,10 @@
   $('actGo').onclick = actGo;
   $('actCancel').onclick = () => { if (!actBusy) { $('modalAct').hidden = true; actZip = null; } };
   $('actSlug').oninput = () => { $('actPrev').textContent = 'Link: ' + ($('actSlug').value.trim().toLowerCase() || 'namatoko') + '.vercel.app'; };
+
+  $('bUpd').onclick = openUpd;
+  $('updGo').onclick = updGo;
+  $('updCancel').onclick = () => { if (!updBusy) $('modalUpd').hidden = true; };
 
   sb.auth.onAuthStateChange((ev, session) => {
     if (session) boot(session);

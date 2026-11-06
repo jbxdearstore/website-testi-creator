@@ -59,8 +59,10 @@ async function cekCreator(jwt) {
 }
 
 async function buat(jwt, inp) {
-  const nama = String(inp.nama_toko || '').trim().slice(0, 60);
-  const email = String(inp.email || '').trim().toLowerCase();
+  const existing = inp.owner_id ? await ambilOwner(jwt, inp.owner_id) : null;
+  if (existing && existing.status !== 'dihapus') throw new Gagal('Website ini belum dihapus, jadi tidak perlu diaktifkan ulang.');
+  const nama = existing ? String(existing.nama_toko) : String(inp.nama_toko || '').trim().slice(0, 60);
+  const email = existing ? String(existing.email).toLowerCase() : String(inp.email || '').trim().toLowerCase();
   const slug = String(inp.slug || '').trim().toLowerCase();
   if (!nama) throw new Gagal('Nama toko wajib diisi.');
   if (!EMAIL_RE.test(email) || /[,()"]/.test(email)) throw new Gagal('Format email tidak valid.');
@@ -75,7 +77,7 @@ async function buat(jwt, inp) {
   if (!induk.files['index.html']) throw new Gagal('Salinan induk tidak punya index.html.');
 
   // Cek duplikat di catatan panel
-  const dup = await db(jwt, 'owners?select=id&or=(email.eq.' + encodeURIComponent(email) + ',domain.eq.' + domain + ',github_repo.eq.' + repoName + ',vercel_project.eq.' + projName + ')');
+  const dup = await db(jwt, 'owners?select=id&or=(email.eq.' + encodeURIComponent(email) + ',domain.eq.' + domain + ',github_repo.eq.' + repoName + ',vercel_project.eq.' + projName + ')' + (existing ? '&id=neq.' + existing.id : ''));
   if (dup.ok && dup.body && dup.body.length) throw new Gagal('Email, nama link, atau nama folder itu sudah dipakai buyer lain.');
 
   const made = { owner: null, repo: false, project: null };
@@ -83,12 +85,15 @@ async function buat(jwt, inp) {
   let ghUser = null;
   try {
     // 1. Catat buyer
-    const o = await db(jwt, 'owners', 'POST', {
-      nama_toko: nama, email, status: 'aktif', aktif: true,
-      github_repo: repoName, vercel_project: projName, domain
-    }, 'return=representation');
-    if (!o.ok || !o.body || !o.body[0]) throw new Gagal('Gagal mencatat buyer. Pastikan SQL tahap 1 sudah dijalankan.');
-    made.owner = o.body[0];
+    if (existing) made.owner = existing;
+    else {
+      const o = await db(jwt, 'owners', 'POST', {
+        nama_toko: nama, email, status: 'aktif', aktif: true,
+        github_repo: repoName, vercel_project: projName, domain
+      }, 'return=representation');
+      if (!o.ok || !o.body || !o.body[0]) throw new Gagal('Gagal mencatat buyer. Pastikan SQL tahap 1 sudah dijalankan.');
+      made.owner = o.body[0];
+    }
 
     // 2. Folder GitHub
     const u = await gh('/user');
@@ -138,18 +143,21 @@ async function buat(jwt, inp) {
     if (blobs.some((b) => !b.ok)) throw new Gagal('Gagal mengunggah file ke GitHub.');
     const tr = await gh('/repos/' + ghUser + '/' + repoName + '/git/trees', 'POST', { tree: names.map((n, i) => ({ path: n, mode: '100644', type: 'blob', sha: blobs[i].body.sha })) });
     if (!tr.ok) throw new Gagal('Gagal menyusun file di GitHub.');
-    const cm = await gh('/repos/' + ghUser + '/' + repoName + '/git/commits', 'POST', { message: 'Website awal (induk versi ' + induk.versi + ')', tree: tr.body.sha, parents: [head] });
+    const cm = await gh('/repos/' + ghUser + '/' + repoName + '/git/commits', 'POST', { message: (existing ? 'Aktifkan ulang' : 'Website awal') + ' (induk versi ' + induk.versi + ')', tree: tr.body.sha, parents: [head] });
     if (!cm.ok) throw new Gagal('Gagal menyimpan file di GitHub.');
     const rf = await gh('/repos/' + ghUser + '/' + repoName + '/git/refs/heads/main', 'PATCH', { sha: cm.body.sha });
     if (!rf.ok) throw new Gagal('Gagal memasang file di GitHub.');
 
-    await db(jwt, 'owners?id=eq.' + made.owner.id, 'PATCH', { induk_versi: induk.versi });
+    const fin = await db(jwt, 'owners?id=eq.' + made.owner.id, 'PATCH', existing
+      ? { status: 'aktif', aktif: true, github_repo: repoName, vercel_project: projName, domain, induk_versi: induk.versi, dihapus_pada: null }
+      : { induk_versi: induk.versi });
+    if (!fin.ok) warn.push('Website sudah online, tapi catatan di panel gagal diperbarui. Perbarui lewat Catatan website.');
     return { ok: true, owner_id: made.owner.id, project: projName, domain, repo: repoName, induk_versi: induk.versi, warn };
   } catch (e) {
     // Batalkan hanya yang dibuat dalam permintaan ini
     if (made.project) await vc('/v9/projects/' + made.project, 'DELETE');
     if (made.repo && ghUser) await gh('/repos/' + ghUser + '/' + repoName, 'DELETE');
-    if (made.owner) await db(jwt, 'owners?id=eq.' + made.owner.id, 'DELETE');
+    if (made.owner && !existing) await db(jwt, 'owners?id=eq.' + made.owner.id, 'DELETE');
     throw e;
   }
 }
@@ -273,6 +281,7 @@ module.exports = async (req, res) => {
     const b = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
     if (b.action === 'status') return res.status(200).json(await status(jwt, String(b.project || '')));
     if (b.action === 'buat') return res.status(200).json(await buat(jwt, b));
+    if (b.action === 'aktifkan' && b.owner_id) return res.status(200).json(await buat(jwt, b));
     if (b.action === 'ambil') return res.status(200).json(await ambil(jwt, b.owner_id));
     if (b.action === 'tanda') return res.status(200).json(tanda(b.manifest));
     if (b.action === 'periksa') return res.status(200).json(periksa(b.manifest, b.sig));

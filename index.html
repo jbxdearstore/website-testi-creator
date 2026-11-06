@@ -92,6 +92,8 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
       <button id="bNew" class="btn sm">+ Buat website baru</button>
       <button id="bAdd" class="btn ghost sm">+ Tambah owner manual</button>
       <button id="bInduk" class="btn ghost sm">Salinan induk</button>
+      <button id="bZip" class="btn ghost sm">Aktifkan ulang dari zip</button>
+      <input id="zipPick" type="file" accept=".zip,application/zip" hidden>
       <button id="bExpOwner" class="btn ghost sm">Export owner (CSV)</button>
       <button id="bExpTesti" class="btn ghost sm">Export testimoni (CSV)</button>
     </div>
@@ -157,6 +159,22 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
       <button type="button" id="delCancel" class="btn ghost">Batal</button>
       <button type="button" id="delAgain" class="btn ghost" hidden>Unduh lagi</button>
       <button type="button" id="delGo" class="btn red">Unduh zip</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalAct" class="cmodal" hidden>
+  <div class="cbox">
+    <h2>Aktifkan ulang website</h2>
+    <p class="muted small" id="actLead"></p>
+    <div id="actSum" style="margin:12px 0"></div>
+    <label for="actSlug">Nama link</label>
+    <input id="actSlug" maxlength="40" autocomplete="off">
+    <div class="muted small" id="actPrev" style="margin-top:6px"></div>
+    <div class="muted small" id="actProg" style="margin-top:10px" hidden></div>
+    <div class="btns">
+      <button type="button" id="actCancel" class="btn ghost">Batal</button>
+      <button type="button" id="actGo" class="btn">Aktifkan</button>
     </div>
   </div>
 </div>

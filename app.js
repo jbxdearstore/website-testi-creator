@@ -506,6 +506,125 @@
     finally { delBusy = false; $('delGo').disabled = false; $('delCancel').disabled = false; }
   }
 
+  /* ===== AKTIFKAN ULANG DARI ZIP ===== */
+  let actZip = null, actInfo = null, actBusy = false;
+  const tipeFoto = (p) => ({ webp: 'image/webp', jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' }[String(p).split('.').pop().toLowerCase()] || 'application/octet-stream');
+
+  async function readZip(file) {
+    if (!window.JSZip) throw new Error('Pustaka zip belum termuat. Muat ulang halaman.');
+    let zip;
+    try { zip = await JSZip.loadAsync(file); } catch (e) { throw new Error('File itu bukan zip yang valid.'); }
+    const mf = zip.file('manifest.json'), sf = zip.file('tanda-tangan.txt');
+    if (!mf || !sf) throw new Error('Zip ini bukan buatan panel (manifest atau tanda tangan tidak ada).');
+    const mText = await mf.async('string'), sig = (await sf.async('string')).trim();
+    let m;
+    try { m = JSON.parse(mText); } catch (e) { throw new Error('Manifest zip rusak.'); }
+    if (m.format !== 'testi-zip' || !m.buyer || !m.hash) throw new Error('Format zip tidak dikenal.');
+    const v = await api({ action: 'periksa', manifest: mText, sig });
+    if (!v.valid) throw new Error('Tanda tangan zip tidak cocok. Zip ini bukan buatan panel atau sudah diubah.');
+    const ada = Object.keys(zip.files).filter((n) => !zip.files[n].dir && n !== 'manifest.json' && n !== 'tanda-tangan.txt');
+    const asing = ada.filter((n) => !(n in m.hash));
+    if (asing.length) throw new Error('Ada file asing di dalam zip: ' + asing[0]);
+    for (const n of Object.keys(m.hash)) {
+      const f = zip.file(n);
+      if (!f) throw new Error('Zip tidak lengkap: ' + n);
+      if ((await sha256(await f.async('uint8array'))) !== m.hash[n]) throw new Error('Isi zip rusak atau sudah diubah: ' + n);
+    }
+    return { zip, m };
+  }
+
+  async function pickZip(ev) {
+    const f = ev.target.files[0];
+    ev.target.value = '';
+    if (!f) return;
+    toast('Memeriksa zip\u2026');
+    try {
+      const { zip, m } = await readZip(f);
+      const o = owners.find((x) => x.id === m.buyer.id);
+      if (!o) throw new Error('Buyer dari zip ini tidak ada di panel.');
+      if (stOf(o) !== 'dihapus') throw new Error(o.nama_toko + ' belum berstatus Dihapus, jadi tidak perlu diaktifkan ulang.');
+      await loadInduk();
+      if (!induk) throw new Error('Salinan induk belum ada. Simpan dulu lewat tombol Salinan induk.');
+      const cnt = await sb.from('testimonials').select('id', { count: 'exact', head: true }).eq('owner_id', o.id);
+      actZip = zip; actInfo = { m, o };
+      const sum = $('actSum'); sum.replaceChildren();
+      [['Nama toko', o.nama_toko], ['Email buyer', o.email], ['Link sebelumnya', m.buyer.domain || '-'],
+       ['Zip dibuat', fmtDate(m.dibuat)], ['Testimoni di zip', m.hitung ? m.hitung.testimoni : '?'], ['Foto di zip', m.hitung ? m.hitung.foto : '?'],
+       ['Penyimpanan foto', mb(m.buyer.terpakai_bytes || 0) + ' / ' + mb(m.buyer.kuota_bytes) + ' MB'],
+       ['Versi induk', (m.buyer.induk_versi || '-') + ' \u2192 ' + induk.versi + ' (terbaru)'],
+       ['Testimoni di Supabase sekarang', cnt.count == null ? '?' : cnt.count]]
+        .forEach((r) => { const d = h('div', 'srow'); d.appendChild(h('span', 'muted', r[0])); d.appendChild(h('span', null, String(r[1]))); sum.appendChild(d); });
+      $('actLead').textContent = 'Zip lolos pemeriksaan: tanda tangan cocok dan semua file utuh. Website dibuat lagi dengan salinan induk terbaru. Data testimoni yang masih ada di Supabase dipakai apa adanya, dan yang sudah hilang dipulihkan dari zip.';
+      $('actSlug').value = String(m.buyer.domain || '').replace(/\.vercel\.app$/, '');
+      $('actPrev').textContent = 'Link: ' + ($('actSlug').value || 'namatoko') + '.vercel.app';
+      $('actProg').hidden = true;
+      $('modalAct').hidden = false;
+    } catch (er) { toast(er.message); }
+  }
+
+  async function pulihkanData(m, zip, say) {
+    const warn = [], id = m.buyer.id;
+    try {
+      const cnt = await sb.from('testimonials').select('id', { count: 'exact', head: true }).eq('owner_id', id);
+      const stc = await sb.from('settings').select('owner_id', { count: 'exact', head: true }).eq('owner_id', id);
+      const tF = zip.file('data/testimonials.json'), sF = zip.file('data/settings.json');
+      const rows = tF ? JSON.parse(await tF.async('string')) : [];
+      const setRow = sF ? JSON.parse(await sF.async('string')) : null;
+      if (setRow && stc.count === 0) {
+        const r = await sb.from('settings').upsert(setRow);
+        if (r.error) warn.push('Pengaturan tampilan tidak bisa dipulihkan otomatis.');
+      }
+      if (rows.length && cnt.count === 0) {
+        say('Memulihkan foto\u2026');
+        let gagal = 0;
+        for (const n of Object.keys(m.hash).filter((x) => x.startsWith('foto/'))) {
+          const p = n.slice(5);
+          const head = await fetch(pubUrl(p), { method: 'HEAD' });
+          if (head.ok) continue;
+          const blob = await zip.file(n).async('blob');
+          const r = await sb.storage.from('testimoni').upload(p, blob, { contentType: tipeFoto(p), upsert: false });
+          if (r.error) gagal++;
+        }
+        say('Memulihkan testimoni\u2026');
+        for (let i = 0; i < rows.length; i += 100) {
+          const r = await sb.from('testimonials').upsert(rows.slice(i, i + 100), { onConflict: 'id', ignoreDuplicates: true });
+          if (r.error) { warn.push('Data testimoni tidak bisa dipulihkan otomatis. Zip tetap aman, simpan baik-baik.'); break; }
+        }
+        if (gagal) warn.push(gagal + ' foto tidak bisa dipulihkan otomatis.');
+      }
+    } catch (e) { warn.push('Pemulihan data gagal: ' + e.message); }
+    return warn;
+  }
+
+  async function actGo() {
+    if (actBusy) return;
+    const slug = $('actSlug').value.trim().toLowerCase();
+    if (!/^[a-z0-9][a-z0-9-]{1,38}[a-z0-9]$/.test(slug)) return toast('Nama link hanya huruf kecil, angka, dan strip (3 sampai 40 karakter).');
+    const prog = $('actProg'), say = (t) => { prog.hidden = false; prog.textContent = t; };
+    actBusy = true; $('actGo').disabled = true; $('actCancel').disabled = true;
+    try {
+      say('Membuat folder, proyek, dan link. Tunggu sekitar 30 detik\u2026');
+      const j = await api({ action: 'aktifkan', owner_id: actInfo.o.id, slug });
+      await load();
+      const warn = (j.warn || []).concat(await pulihkanData(actInfo.m, actZip, say));
+      say('Vercel sedang membangun website\u2026');
+      let state = '';
+      for (let i = 0; i < 40; i++) {
+        await sleep(4000);
+        try { state = (await api({ action: 'status', project: j.project })).state; } catch (er) { state = ''; }
+        if (state === 'READY' || state === 'ERROR' || state === 'CANCELED') break;
+      }
+      $('modalAct').hidden = true; actZip = null;
+      if (state === 'READY') {
+        toast('Website aktif lagi: ' + j.domain);
+        if (confirm('Website aktif di https://' + j.domain + '. Buka sekarang?')) window.open('https://' + j.domain, '_blank');
+      } else if (state === 'ERROR' || state === 'CANCELED') toast('Vercel gagal membangun website. Periksa proyek ' + j.project + ' di Vercel.');
+      else toast('Website masih dibangun. Cek lagi sebentar lagi di https://' + j.domain);
+      if (warn.length) setTimeout(() => alert(warn.join('\n\n')), 400);
+    } catch (er) { prog.hidden = true; toast(er.message); }
+    finally { actBusy = false; $('actGo').disabled = false; $('actCancel').disabled = false; }
+  }
+
   /* ===== LOGIN ===== */
   async function boot(session) {
     const uid = session.user.id;
@@ -560,6 +679,12 @@
   $('delGo').onclick = delGo;
   $('delAgain').onclick = () => { if (delZip) downloadBlob(delZip.blob, delZip.name); };
   $('delCancel').onclick = () => { if (!delBusy) { $('modalDel').hidden = true; delZip = null; } };
+
+  $('bZip').onclick = () => $('zipPick').click();
+  $('zipPick').onchange = pickZip;
+  $('actGo').onclick = actGo;
+  $('actCancel').onclick = () => { if (!actBusy) { $('modalAct').hidden = true; actZip = null; } };
+  $('actSlug').oninput = () => { $('actPrev').textContent = 'Link: ' + ($('actSlug').value.trim().toLowerCase() || 'namatoko') + '.vercel.app'; };
 
   sb.auth.onAuthStateChange((ev, session) => {
     if (session) boot(session);

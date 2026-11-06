@@ -322,13 +322,22 @@
 
   /* ===== BUAT WEBSITE BUYER ===== */
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  async function api(body) {
+  async function tokenLogin(paksa) {
     const { data } = await sb.auth.getSession();
-    const token = data && data.session ? data.session.access_token : '';
+    let s = data && data.session;
+    if (paksa || !s || (s.expires_at && s.expires_at * 1000 - Date.now() < 120000)) {
+      const r = await sb.auth.refreshSession();
+      if (r.data && r.data.session) s = r.data.session;
+    }
+    return s ? s.access_token : '';
+  }
+  async function api(body, ulang) {
+    const token = await tokenLogin(!!ulang);
     const r = await fetch('/api/buat-website', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(body) });
     let j = null;
     try { j = await r.json(); } catch (e) { j = null; }
     if (!j) throw new Error('Server tidak merespons. Pastikan folder api sudah terpasang di panel.');
+    if (!j.ok && !ulang && /^Login tidak valid/.test(j.error || '')) return api(body, true);
     if (!j.ok) throw new Error(j.error || 'Gagal.');
     return j;
   }

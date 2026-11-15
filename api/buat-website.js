@@ -337,6 +337,43 @@ async function perbarui(jwt, id) {
   return { ok: true, versi: induk.versi, skip, warn };
 }
 
+// ===== Ganti kunci Supabase di config.js website buyer ke kunci baru =====
+async function gantiKunci(jwt, id) {
+  const o = await ambilOwner(jwt, id);
+  if (o.status === 'dihapus') throw new Gagal('Buyer ini berstatus Dihapus.');
+  const repo = o.github_repo, proj = o.vercel_project;
+  if (!repo || !proj) throw new Gagal('Catatan website belum diisi.');
+  if (!NAME_OK.test(repo) || FORBID.includes(repo.toLowerCase()) || FORBID.includes(String(proj).toLowerCase())) throw new Gagal('Nama folder ini tidak boleh diubah lewat panel.');
+  const u = await gh('/user');
+  if (!u.ok) throw new Gagal('Kunci GitHub ditolak.');
+  const base = '/repos/' + u.body.login + '/' + repo;
+  const rf = await gh(base + '/git/ref/heads/main');
+  if (!rf.ok) throw new Gagal('Folder GitHub ' + repo + ' tidak ditemukan atau tidak punya cabang main.');
+  const head = rf.body.object.sha;
+  const cm = await gh(base + '/git/commits/' + head);
+  if (!cm.ok) throw new Gagal('Gagal membaca folder GitHub.');
+  const baseTree = cm.body.tree.sha;
+  const t0 = await gh(base + '/git/trees/' + baseTree);
+  if (!t0.ok) throw new Gagal('Gagal membaca isi folder GitHub.');
+  const cfg = (t0.body.tree || []).find((t) => t.path === 'config.js' && t.type === 'blob');
+  if (!cfg) throw new Gagal('Folder ini tidak punya config.js.');
+  const cb = await gh(base + '/git/blobs/' + cfg.sha);
+  const teks = cb.ok ? Buffer.from(String(cb.body.content || ''), 'base64').toString('utf8') : '';
+  if (!teks.includes(o.id)) throw new Gagal('config.js di folder ini bukan milik buyer ini, jadi tidak diubah.');
+  if (teks.includes(SUPABASE_KEY)) return { ok: true, skip: 'sudah memakai kunci baru' };
+  const baru = teks.replace(/(SUPABASE_KEY\s*:\s*['"])[^'"]*(['"])/, (m, a, b) => a + SUPABASE_KEY + b);
+  if (baru === teks) throw new Gagal('Baris kunci di config.js tidak ditemukan, jadi tidak diubah.');
+  const bl = await gh(base + '/git/blobs', 'POST', { content: Buffer.from(baru, 'utf8').toString('base64'), encoding: 'base64' });
+  if (!bl.ok) throw new Gagal('Gagal mengunggah config.js ke GitHub.');
+  const tr = await gh(base + '/git/trees', 'POST', { base_tree: baseTree, tree: [{ path: 'config.js', mode: '100644', type: 'blob', sha: bl.body.sha }] });
+  if (!tr.ok) throw new Gagal('Gagal menyusun file di GitHub.');
+  const nc = await gh(base + '/git/commits', 'POST', { message: 'Ganti kunci Supabase ke kunci baru', tree: tr.body.sha, parents: [head] });
+  if (!nc.ok) throw new Gagal('Gagal menyimpan perubahan di GitHub.');
+  const up = await gh(base + '/git/refs/heads/main', 'PATCH', { sha: nc.body.sha });
+  if (!up.ok) throw new Gagal('Gagal memasang perubahan di GitHub.');
+  return { ok: true };
+}
+
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'Metode tidak didukung.' });
@@ -348,6 +385,7 @@ module.exports = async (req, res) => {
     if (b.action === 'buat') return res.status(200).json(await buat(jwt, b));
     if (b.action === 'aktifkan' && b.owner_id) return res.status(200).json(await buat(jwt, b));
     if (b.action === 'perbarui') return res.status(200).json(await perbarui(jwt, b.owner_id));
+    if (b.action === 'gantikunci') return res.status(200).json(await gantiKunci(jwt, b.owner_id));
     if (b.action === 'ambil') return res.status(200).json(await ambil(jwt, b.owner_id));
     if (b.action === 'tanda') return res.status(200).json(tanda(b.manifest));
     if (b.action === 'periksa') return res.status(200).json(periksa(b.manifest, b.sig));

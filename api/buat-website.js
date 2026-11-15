@@ -3,7 +3,7 @@
 // Kunci rahasia dibaca dari Environment Variables Vercel: GITHUB_TOKEN, VERCEL_TOKEN, SUPABASE_ACCESS_TOKEN.
 
 const SUPABASE_URL = 'https://yjxdfqvenbsdmgpcdkwe.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlqeGRmcXZlbmJzZG1ncGNka3dlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTIxNDMyNTUsImV4cCI6MjEwNzcxOTI1NX0.h3BUjRlXqwhacgE04QHOfLGwsFJieiIMCLEEUpqkon8';
+const SUPABASE_KEY = 'sb_publishable_lnZelyF_Acg8-F-XNIAtDw_pNX3jeRG';
 const SUPABASE_REF = 'yjxdfqvenbsdmgpcdkwe';
 const VERCEL_TEAM_SLUG = 'xdear-store';
 const PREFIX = 'testi-';

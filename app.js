@@ -689,6 +689,52 @@
     if (peringatan.length) setTimeout(() => alert(peringatan.join('\n\n')), 400);
   }
 
+  /* ===== GANTI KUNCI SEMUA BUYER ===== */
+  let keyBusy = false, keyPlan = [];
+  function openKey() {
+    keyPlan = owners.filter((o) => stOf(o) !== 'dihapus').map((o) => {
+      if (!o.github_repo || !o.vercel_project) return { o, aksi: 'lewat', ket: 'dilewati: catatan website belum diisi (ganti manual di GitHub buyer)' };
+      return { o, aksi: 'ganti', ket: 'akan diganti' };
+    });
+    const n = keyPlan.filter((x) => x.aksi === 'ganti').length;
+    $('keyLead').textContent = 'Kunci Supabase baru dipasang ke config.js ' + n + ' website buyer. Isi lain di config.js (termasuk id buyer) tidak diubah. Vercel membangun ulang tiap website setelahnya.';
+    drawKey();
+    $('keyProg').hidden = true;
+    $('keyGo').hidden = n === 0; $('keyGo').disabled = false; $('keyGo').textContent = 'Ganti kunci ' + n + ' website';
+    $('keyCancel').textContent = 'Batal';
+    $('modalKey').hidden = false;
+  }
+  function drawKey() {
+    const box = $('keyList'); box.replaceChildren();
+    if (!keyPlan.length) { box.appendChild(h('div', 'muted small', 'Belum ada buyer.')); return; }
+    keyPlan.forEach((x) => {
+      const d = h('div', 'srow');
+      d.appendChild(h('span', null, x.o.nama_toko));
+      d.appendChild(h('span', 'muted', x.ket));
+      box.appendChild(d);
+    });
+  }
+  async function keyGo() {
+    if (keyBusy) return;
+    const todo = keyPlan.filter((x) => x.aksi === 'ganti');
+    if (!confirm('Ganti kunci Supabase di ' + todo.length + ' website buyer?')) return;
+    keyBusy = true; $('keyGo').disabled = true; $('keyCancel').disabled = true;
+    const prog = $('keyProg'); prog.hidden = false;
+    let ok = 0, lewat = 0, gagal = 0;
+    for (let i = 0; i < todo.length; i++) {
+      const x = todo[i];
+      prog.textContent = 'Mengganti ' + (i + 1) + ' dari ' + todo.length + ': ' + x.o.nama_toko + '\u2026';
+      try {
+        const j = await api({ action: 'gantikunci', owner_id: x.o.id });
+        x.aksi = 'selesai';
+        if (j.skip) { x.ket = j.skip; lewat++; } else { x.ket = 'berhasil diganti'; ok++; }
+      } catch (er) { x.aksi = 'gagal'; x.ket = 'gagal: ' + er.message; gagal++; }
+      drawKey();
+    }
+    prog.textContent = 'Selesai. Berhasil ' + ok + ', sudah memakai kunci baru ' + lewat + ', gagal ' + gagal + '. Vercel membangun ulang website yang diganti, biasanya satu sampai dua menit.';
+    keyBusy = false; $('keyGo').hidden = true; $('keyCancel').disabled = false; $('keyCancel').textContent = 'Tutup';
+  }
+
   /* ===== LOGIN ===== */
   async function boot(session) {
     const uid = session.user.id;
@@ -753,6 +799,9 @@
   $('bUpd').onclick = openUpd;
   $('updGo').onclick = updGo;
   $('updCancel').onclick = () => { if (!updBusy) $('modalUpd').hidden = true; };
+  $('bKey').onclick = openKey;
+  $('keyGo').onclick = keyGo;
+  $('keyCancel').onclick = () => { if (!keyBusy) $('modalKey').hidden = true; };
 
   sb.auth.onAuthStateChange((ev, session) => {
     if (session) boot(session);

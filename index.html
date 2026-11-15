@@ -94,6 +94,7 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
       <button id="bInduk" class="btn ghost sm">Salinan induk</button>
       <button id="bZip" class="btn ghost sm">Aktifkan ulang dari zip</button>
       <button id="bUpd" class="btn ghost sm">Perbarui semua buyer</button>
+      <button id="bKey" class="btn ghost sm">Ganti kunci semua buyer</button>
       <input id="zipPick" type="file" accept=".zip,application/zip" hidden>
       <button id="bExpOwner" class="btn ghost sm">Export owner (CSV)</button>
       <button id="bExpTesti" class="btn ghost sm">Export testimoni (CSV)</button>
@@ -189,6 +190,19 @@ textarea{font:12px/1.5 ui-monospace,Menlo,Consolas,monospace;min-height:150px;re
     <div class="btns">
       <button type="button" id="updCancel" class="btn ghost">Batal</button>
       <button type="button" id="updGo" class="btn">Perbarui</button>
+    </div>
+  </div>
+</div>
+
+<div id="modalKey" class="cmodal" hidden>
+  <div class="cbox">
+    <h2>Ganti kunci semua buyer</h2>
+    <p class="muted small" id="keyLead"></p>
+    <div id="keyList" style="margin:12px 0"></div>
+    <div class="muted small" id="keyProg" style="margin-top:10px" hidden></div>
+    <div class="btns">
+      <button type="button" id="keyCancel" class="btn ghost">Batal</button>
+      <button type="button" id="keyGo" class="btn">Ganti kunci</button>
     </div>
   </div>
 </div>
